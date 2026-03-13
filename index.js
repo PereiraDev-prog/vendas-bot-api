@@ -47,6 +47,8 @@ async function getSheetData() {
  */
 app.all('/checar-estoque', async (req, res) => {
     try {
+        console.log('--- CHAMADA /checar-estoque ---');
+        console.log('Body:', JSON.stringify(req.body, null, 2));
         const rows = await getSheetData();
         const { product } = req.body;
         const tipoSolicitado = product?.item?.name; // Ex: "diario", "Semanal", etc.
@@ -76,6 +78,8 @@ app.all('/checar-estoque', async (req, res) => {
  * Busca as keys disponíveis, reserva e retorna (formato Ease Bot).
  */
 app.post('/obter-key', async (req, res) => {
+    console.log('--- CHAMADA /obter-key ---');
+    console.log('Body:', JSON.stringify(req.body, null, 2));
     const { user, order, product } = req.body;
     const clienteId = user ? user.id : 'desconhecido';
     const quantidade = order ? order.quantity : 1;
