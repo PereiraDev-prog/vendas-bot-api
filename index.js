@@ -8,7 +8,14 @@ dotenv.config();
 
 const app = express();
 app.use(express.json());
+app.use(express.urlencoded({ extended: true }));
 app.use(cors());
+
+// Log global para ver TODAS as tentativas do Bot
+app.use((req, res, next) => {
+    console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
+    next();
+});
 
 // Configuração da Google Sheets API
 let auth;
@@ -53,7 +60,8 @@ app.all('/checar-estoque', async (req, res) => {
 
         const rows = await getSheetData();
         const product = bodyContent.product;
-        const tipoSolicitado = product?.item?.name; 
+        // Tenta pegar o nome da variação (item.name) ou o nome do produto principal (name)
+        const tipoSolicitado = product?.item?.name || product?.name; 
         
         // Filtra linhas: deve ter key, estar disponível e bater o tipo
         const disponiveis = rows.filter(row => {
@@ -88,7 +96,8 @@ app.post('/obter-key', async (req, res) => {
     const { user, order, product } = bodyContent;
     const clienteId = user ? user.id : 'desconhecido';
     const quantidade = order ? order.quantity : 1;
-    const tipoSolicitado = product?.item?.name; 
+    // Tenta pegar o nome da variação (item.name) ou o nome do produto principal (name)
+    const tipoSolicitado = product?.item?.name || product?.name; 
 
     try {
         const rows = await getSheetData();
