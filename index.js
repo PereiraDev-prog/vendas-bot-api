@@ -165,11 +165,8 @@ app.all('/obter-key', async (req, res) => {
         // Retorno ultra-compatível (cobre várias versões do Ease Bot / Bot de Vendas)
         return res.json({
             status: "success",
-            key: keysEntregues[0], // Campo singular
-            items: keysEntregues,  // Campo lista (novo padrão)
-            content: keysEntregues.join('\n'), // Campo texto (alternativo)
+            items: keysEntregues,
             is_to_make_delivery: true,
-            message: "Entrega realizada com sucesso",
             stock_count: rows.length - keysEntregues.length 
         });
     } catch (error) {
