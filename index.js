@@ -35,6 +35,16 @@ const SPREADSHEET_ID = '1MxL-Z61mNOM6Zipb5f4NjR1-hlA2zeZDvhVoG2nD7bI';
 const SHEET_NAME = 'ESTOQUE'; // Vamos pedir ao usuário para renomear a aba para 'ESTOQUE'
 
 /**
+ * Normaliza strings para comparação robusta
+ */
+function normalize(str) {
+    if (!str) return '';
+    return str.toString().toLowerCase()
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, "") // Remove acentos
+        .trim();
+}
+
+/**
  * Funçao auxiliar para obter todos os dados da planilha
  */
 async function getSheetData() {
@@ -43,37 +53,42 @@ async function getSheetData() {
 
     const response = await sheets.spreadsheets.values.get({
         spreadsheetId: SPREADSHEET_ID,
-        range: `${SHEET_NAME}!A2:F`, // Aumentado para F para incluir o TIPO do produto
+        range: `${SHEET_NAME}!A2:F`,
     });
     return response.data.values || [];
 }
 
 /**
  * Endpoint: POST /checar-estoque
- * Verifica se existe estoque disponível (formato Ease Bot).
  */
 app.all('/checar-estoque', async (req, res) => {
     try {
         console.log('--- CHAMADA /checar-estoque ---');
         const bodyContent = req.body?.data || req.body || {};
-        console.log('Payload:', JSON.stringify(bodyContent, null, 2));
+        console.log('Payload Recebido:', JSON.stringify(bodyContent, null, 2));
 
         const rows = await getSheetData();
         const product = bodyContent.product;
         // Tenta pegar o nome da variação (item.name) ou o nome do produto principal (name)
-        const tipoSolicitado = product?.item?.name || product?.name; 
+        const tipoSolicitado = normalize(product?.item?.name || product?.name); 
         
+        console.log(`Buscando estoque para tipo: "${tipoSolicitado || 'QUALQUER'}"`);
+
         // Filtra linhas: deve ter key, estar disponível e bater o tipo
         const disponiveis = rows.filter(row => {
             const temKey = row[1] && row[1].trim() !== '';
-            const statusOk = row[2] === 'DISPONIVEL';
-            const tipoOfRow = row[5] ? row[5].toLowerCase() : '';
-            const tipoOk = !tipoSolicitado || tipoOfRow === tipoSolicitado.toLowerCase();
+            const statusOk = normalize(row[2]) === 'disponivel';
+            const tipoOfRow = normalize(row[5]);
+            
+            // Se o usuário não pediu tipo específico, qualquer um serve. 
+            // Se pediu, tem que bater ou a linha ser vazia (legado)
+            const tipoOk = !tipoSolicitado || tipoOfRow === tipoSolicitado || tipoOfRow === '';
+            
             return temKey && statusOk && tipoOk;
         });
         
         const count = disponiveis.length;
-        console.log(`Estoque para [${tipoSolicitado || 'Geral'}]: ${count}`);
+        console.log(`Resultado: ${count} itens encontrados.`);
 
         return res.json({ 
             status: count > 0 ? "continue" : "error",
@@ -88,28 +103,28 @@ app.all('/checar-estoque', async (req, res) => {
 
 /**
  * Endpoint: POST /obter-key
- * Busca as keys disponíveis, reserva e retorna (formato Ease Bot).
  */
 app.all('/obter-key', async (req, res) => {
-    console.log('--- CHAMADA /obter-key ---');
-    console.log('Method:', req.method);
-    const bodyContent = req.body?.data || req.body || {};
-    const { user, order, product } = bodyContent;
-    const clienteId = user ? user.id : 'desconhecido';
-    const quantidade = order ? order.quantity : 1;
-    // Tenta pegar o nome da variação (item.name) ou o nome do produto principal (name)
-    const tipoSolicitado = product?.item?.name || product?.name; 
-
     try {
+        console.log('--- CHAMADA /obter-key ---');
+        const bodyContent = req.body?.data || req.body || {};
+        console.log('Payload Recebido:', JSON.stringify(bodyContent, null, 2));
+
+        const { user, order, product } = bodyContent;
+        const clienteId = user ? user.id : 'desconhecido';
+        const quantidade = order ? Math.max(1, parseInt(order.quantity) || 1) : 1;
+        const tipoSolicitado = normalize(product?.item?.name || product?.name); 
+
+        console.log(`Solicitação: ${quantidade}x "${tipoSolicitado || 'QUALQUER'}" para Cliente: ${clienteId}`);
+
         const rows = await getSheetData();
         const disponiveisIndexes = [];
         
-        // Localiza as keys disponíveis que batem com o TIPO
         for (let i = 0; i < rows.length; i++) {
             const temKey = rows[i][1] && rows[i][1].trim() !== '';
-            const statusOk = rows[i][2] === 'DISPONIVEL';
-            const tipoOfRow = rows[i][5] ? rows[i][5].toLowerCase() : '';
-            const tipoOk = !tipoSolicitado || tipoOfRow === tipoSolicitado.toLowerCase();
+            const statusOk = normalize(rows[i][2]) === 'disponivel';
+            const tipoOfRow = normalize(rows[i][5]);
+            const tipoOk = !tipoSolicitado || tipoOfRow === tipoSolicitado || tipoOfRow === '';
 
             if (temKey && statusOk && tipoOk) {
                 disponiveisIndexes.push(i);
@@ -118,6 +133,7 @@ app.all('/obter-key', async (req, res) => {
         }
 
         if (disponiveisIndexes.length < quantidade) {
+            console.log('Falha: Estoque insuficiente.');
             return res.json({ 
                 status: "error", 
                 reason: `Estoque insuficiente para ${tipoSolicitado || 'Geral'}` 
@@ -129,7 +145,6 @@ app.all('/obter-key', async (req, res) => {
         const client = await auth.getClient();
         const sheets = google.sheets({ version: 'v4', auth: client });
 
-        // Atualiza cada key individualmente na planilha
         for (const idx of disponiveisIndexes) {
             const key = rows[idx][1];
             keysEntregues.push(key);
@@ -145,14 +160,17 @@ app.all('/obter-key', async (req, res) => {
             });
         }
 
-        console.log(`[${dataVenda}] ${quantidade} key(s) entregue(s) para ${clienteId}`);
+        console.log(`Sucesso: ${keysEntregues.length} keys marcadas como VENDIDO.`);
 
-        // Formato esperado pelo Ease Bot
+        // Retorno ultra-compatível (cobre várias versões do Ease Bot / Bot de Vendas)
         return res.json({
             status: "success",
-            items: keysEntregues,
+            key: keysEntregues[0], // Campo singular
+            items: keysEntregues,  // Campo lista (novo padrão)
+            content: keysEntregues.join('\n'), // Campo texto (alternativo)
             is_to_make_delivery: true,
-            stock_count: rows.length - keysEntregues.length // Estimativa simples
+            message: "Entrega realizada com sucesso",
+            stock_count: rows.length - keysEntregues.length 
         });
     } catch (error) {
         console.error('Erro ao obter key:', error);
