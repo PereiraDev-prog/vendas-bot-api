@@ -90,8 +90,9 @@ app.all('/checar-estoque', async (req, res) => {
  * Endpoint: POST /obter-key
  * Busca as keys disponíveis, reserva e retorna (formato Ease Bot).
  */
-app.post('/obter-key', async (req, res) => {
+app.all('/obter-key', async (req, res) => {
     console.log('--- CHAMADA /obter-key ---');
+    console.log('Method:', req.method);
     const bodyContent = req.body?.data || req.body || {};
     const { user, order, product } = bodyContent;
     const clienteId = user ? user.id : 'desconhecido';
