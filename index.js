@@ -48,24 +48,29 @@ async function getSheetData() {
 app.all('/checar-estoque', async (req, res) => {
     try {
         console.log('--- CHAMADA /checar-estoque ---');
-        console.log('Body:', JSON.stringify(req.body, null, 2));
+        const bodyContent = req.body?.data || req.body || {};
+        console.log('Payload:', JSON.stringify(bodyContent, null, 2));
+
         const rows = await getSheetData();
-        const { product } = req.body;
-        const tipoSolicitado = product?.item?.name; // Ex: "diario", "Semanal", etc.
-
-        // Filtra linhas com STATUS "DISPONIVEL" e que batem com o TIPO (coluna F - índice 5)
+        const product = bodyContent.product;
+        const tipoSolicitado = product?.item?.name; 
+        
+        // Filtra linhas: deve ter key, estar disponível e bater o tipo
         const disponiveis = rows.filter(row => {
+            const temKey = row[1] && row[1].trim() !== '';
             const statusOk = row[2] === 'DISPONIVEL';
-            const tipoOk = !tipoSolicitado || (row[5] && row[5].toLowerCase() === tipoSolicitado.toLowerCase());
-            return statusOk && tipoOk;
+            const tipoOfRow = row[5] ? row[5].toLowerCase() : '';
+            const tipoOk = !tipoSolicitado || tipoOfRow === tipoSolicitado.toLowerCase();
+            return temKey && statusOk && tipoOk;
         });
-
+        
         const count = disponiveis.length;
+        console.log(`Estoque para [${tipoSolicitado || 'Geral'}]: ${count}`);
 
-        return res.json({
+        return res.json({ 
             status: count > 0 ? "continue" : "error",
             stock_count: count,
-            reason: count > 0 ? null : `Estoque esgotado para o tipo: ${tipoSolicitado || 'Geral'}`
+            reason: count > 0 ? null : `Estoque esgotado para: ${tipoSolicitado || 'Geral'}`
         });
     } catch (error) {
         console.error('Erro ao checar estoque:', error);
@@ -79,32 +84,33 @@ app.all('/checar-estoque', async (req, res) => {
  */
 app.post('/obter-key', async (req, res) => {
     console.log('--- CHAMADA /obter-key ---');
-    console.log('Body:', JSON.stringify(req.body, null, 2));
-    const { user, order, product } = req.body;
+    const bodyContent = req.body?.data || req.body || {};
+    const { user, order, product } = bodyContent;
     const clienteId = user ? user.id : 'desconhecido';
     const quantidade = order ? order.quantity : 1;
-    const tipoSolicitado = product?.item?.name; // Ex: "diario", "Semanal", etc.
+    const tipoSolicitado = product?.item?.name; 
 
     try {
         const rows = await getSheetData();
         const disponiveisIndexes = [];
-
-        // Localiza as keys disponíveis que batem com o TIPO (coluna F - índice 5)
+        
+        // Localiza as keys disponíveis que batem com o TIPO
         for (let i = 0; i < rows.length; i++) {
+            const temKey = rows[i][1] && rows[i][1].trim() !== '';
             const statusOk = rows[i][2] === 'DISPONIVEL';
             const tipoOfRow = rows[i][5] ? rows[i][5].toLowerCase() : '';
             const tipoOk = !tipoSolicitado || tipoOfRow === tipoSolicitado.toLowerCase();
 
-            if (statusOk && tipoOk) {
+            if (temKey && statusOk && tipoOk) {
                 disponiveisIndexes.push(i);
                 if (disponiveisIndexes.length >= quantidade) break;
             }
         }
 
         if (disponiveisIndexes.length < quantidade) {
-            return res.json({
-                status: "error",
-                reason: `Estoque insuficiente para o tipo ${tipoSolicitado || 'Geral'}`
+            return res.json({ 
+                status: "error", 
+                reason: `Estoque insuficiente para ${tipoSolicitado || 'Geral'}` 
             });
         }
 
