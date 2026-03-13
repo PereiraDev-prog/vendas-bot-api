@@ -162,11 +162,14 @@ app.all('/obter-key', async (req, res) => {
 
         console.log(`Sucesso: ${keysEntregues.length} keys marcadas como VENDIDO.`);
 
-        // Retorno exigido pelo Ease Bot Hooks API (E estrito como String)
+        // Retorno exigido pelo Ease Bot Hooks API
         return res.json({
             status: "success",
             items: keysEntregues,
-            is_to_make_delivery: "true",
+            is_to_make_delivery: true,
+            additional_contents: {
+                content: `🔑 **Sua Chave:**\n${keysEntregues.join('\n')}`
+            },
             stock_count: rows.length - keysEntregues.length 
         });
     } catch (error) {
