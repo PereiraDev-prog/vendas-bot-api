@@ -12,7 +12,7 @@ echo 2. Criando pacote de atualizacao...
 
 echo 3. Enviando para o GitHub/Render...
 echo (Se for a primeira vez, uma janela de login pode aparecer)
-"C:\Program Files\Git\cmd\git.exe" push -u origin master
+"C:\Program Files\Git\cmd\git.exe" push -u origin principal
 
 echo.
 echo ==========================================
